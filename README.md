@@ -1,4 +1,4 @@
-# mailer
+# Mailer
 Basic SMTP client for Java
 
 Mailer is built on top of [Apache Commons Net API](https://commons.apache.org/proper/commons-net/).
