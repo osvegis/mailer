@@ -140,19 +140,53 @@ private void clientAuth(String user, String password) throws IOException
 {
     try
     {
-        for(AuthenticatingSMTPClient.AUTH_METHOD method :
-            AuthenticatingSMTPClient.AUTH_METHOD.values())
+        // We try with the methods indicated by the server.
+        String header = "250-AUTH ";
+
+        for(String reply : smtpClient.getReplyStrings())
         {
-            if(smtpClient.auth(method, user, password))
-                return; //..........................................RETURN
+            if(reply.startsWith(header))
+            {
+                StringTokenizer st = new StringTokenizer(
+                                     reply.substring(header.length()));
+
+                while(st.hasMoreTokens())
+                {
+                    AuthenticatingSMTPClient.AUTH_METHOD method;
+                    method = getAuthMethod(st.nextToken());
+
+                    if(method != null)
+                    {
+                        if(smtpClient.auth(method, user, password))
+                            return; //..............................RETURN
+                    }
+                }
+            }
         }
     }
     catch(Exception ex)
     {
         throw newIOException(ex);
     }
+}
 
-    throw newIOException("Unable to authenticate client.");
+private AuthenticatingSMTPClient.AUTH_METHOD getAuthMethod(String name)
+{
+    switch(name)
+    {
+        case "PLAIN":
+            return AuthenticatingSMTPClient.AUTH_METHOD.PLAIN;
+        case "CRAM-MD5":
+            return AuthenticatingSMTPClient.AUTH_METHOD.CRAM_MD5;
+        case "LOGIN":
+            return AuthenticatingSMTPClient.AUTH_METHOD.LOGIN;
+        case "XOAUTH":
+            return AuthenticatingSMTPClient.AUTH_METHOD.XOAUTH;
+        case "XOAUTH2":
+            return AuthenticatingSMTPClient.AUTH_METHOD.XOAUTH2;
+        default:
+            return null; // Unsupported method.
+    }
 }
 
 /**
