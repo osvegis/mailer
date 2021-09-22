@@ -119,7 +119,7 @@ private AuthenticatingSMTPClient connect(
         throw newIOException("SMTP server refused connection.");
     }
 
-    if(!client.login())
+    if(!client.elogin())
         throw newIOException("Access denied.");
 
     if(security == Security.TLS)
@@ -129,7 +129,7 @@ private AuthenticatingSMTPClient connect(
 
         // In Office365 we must log in again!
 
-        if(!client.login())
+        if(!client.elogin())
             throw newIOException("Access denied.");
     }
 
