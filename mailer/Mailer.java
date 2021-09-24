@@ -54,7 +54,7 @@ public Mailer(String smtp, Integer port,
     Objects.requireNonNull(user);
     Objects.requireNonNull(password);
     Objects.requireNonNull(security);
-    this.mailFrom = Objects.requireNonNull(mailFrom);
+    this.mailFrom = Objects.requireNonNull(mailFrom).trim();
     this.mailCco  = mailCco;
 
     if(port == null)
@@ -201,8 +201,8 @@ public void send(String mailTo, String subject, String text,
                  Attachment...attachments)
     throws IOException
 {
-    String header   = getHeader(mailTo, encodeValue(subject)),
-           boundary = getBoundary();
+    String header   = getHeader(mailTo, Util.encodeSubject(subject)),
+           boundary = attachments.length > 0 ? getBoundary() : null;
 
     try(Writer w = smtpClient.sendMessageData())
     {
@@ -210,12 +210,16 @@ public void send(String mailTo, String subject, String text,
             throw newIOException("Unable to send message data.");
 
         w.append(header);
-        w.append("MIME-Version: 1.0\r\n");
-        w.append("Content-Type: multipart/mixed; ");
-        w.append("boundary=").append(boundary).append("\r\n");
-        w.append("\r\n--").append(boundary).append("\r\n");
 
-        if(isHtml(text))
+        if(boundary != null)
+        {
+            w.append("MIME-Version: 1.0\r\n");
+            w.append("Content-Type: multipart/mixed; ");
+            w.append("boundary=").append(boundary).append("\r\n");
+            w.append("\r\n--").append(boundary).append("\r\n");
+        }
+
+        if(Util.isHtml(text))
         {
             w.append("Content-Type: text/html; charset=ISO-8859-1\r\n");
             w.append("Content-Transfer-Encoding: 8bit\r\n\r\n");
@@ -226,12 +230,12 @@ public void send(String mailTo, String subject, String text,
             w.append("Content-Type: text/plain; charset=ISO-8859-1\r\n");
             w.append("Content-Transfer-Encoding: quoted-printable");
             w.append("\r\n\r\n");
-            w.append(encodeQuotedPrintable(text)).append("\r\n");
+            w.append(Util.encodeQuotedPrintable(text)).append("\r\n");
         }
 
         for(Attachment a : attachments)
         {
-            String fileName = "\""+ encodeValue(a.getName()) +"\"";
+            String fileName = "\""+ Util.encodeString(a.getName()) +"\"";
             w.append("\r\n--").append(boundary).append("\r\n");
             w.append("Content-Type: application/octet-stream; ");
             w.append("name=").append(fileName).append("\r\n");
@@ -241,7 +245,8 @@ public void send(String mailTo, String subject, String text,
             a.writeBase64(w);
         }
 
-        w.append("\r\n--").append(boundary).append("--\r\n");
+        if(boundary != null)
+            w.append("\r\n--").append(boundary).append("--\r\n");
     }
 
     if(!smtpClient.completePendingCommand())
@@ -259,7 +264,7 @@ public void send(String mailTo, File eml) throws IOException
     try(BufferedReader reader = new BufferedReader(
         new InputStreamReader(new FileInputStream(eml), "ISO-8859-1")))
     {
-        String  subject  = "Subject:",
+        String  subject  = "Subject: ",
                 content  = null,
                 boundary = null,
                 header   = null,
@@ -269,16 +274,27 @@ public void send(String mailTo, File eml) throws IOException
         {
             if(line.startsWith(subject))
             {
-                String s = line.substring(subject.length());
-                header = getHeader(mailTo, s.trim());
+                // The subject can be several lines long.
+                StringBuilder sb = new StringBuilder(
+                        line.substring(subject.length()));
+
+                while((line = reader.readLine()) != null
+                      && !line.isEmpty()
+                      && Character.isWhitespace(line.charAt(0)))
+                {
+                    sb.append('\n').append(line);
+                }
+
+                header = getHeader(mailTo, sb.toString());
+
+                if(line == null || line.isEmpty())
+                    break; //........................................BREAK
             }
-            else
-            {
-                if(line.startsWith("Content-Type:"))
-                    content = line;
-                else if(line.contains("boundary="))
-                    boundary = line; // It is on the next line.
-            }
+
+            if(line.startsWith("Content-Type:"))
+                content = line;
+            else if(line.contains("boundary="))
+                boundary = line; // It is on the next line.
         }
 
         if(header == null)
@@ -313,18 +329,18 @@ private String getHeader(String mailTo, String subject) throws IOException
         throw newIOException("Unable to reset SMTP connection.");
 
     debug.reset();
-    String[] recipient = getAddressArray(mailTo);
+    String[] recipient = Util.getAddressArray(mailTo);
 
-    if(!smtpClient.setSender(mailFrom))
+    if(!smtpClient.setSender(Util.getMailAddress(mailFrom)))
         throw newIOException("Invalid email: "+ mailFrom);
 
     addRecipient(recipient[0]);
 
-    for(String cco : getAddressArray(mailCco))
+    for(String cco : Util.getAddressArray(mailCco))
         addRecipient(cco);
 
     SimpleSMTPHeader header = new SimpleSMTPHeader(
-                              mailFrom, recipient[0], subject);
+            Util.encodeMailAddress(mailFrom), recipient[0], subject);
 
     for(int i = 1; i < recipient.length; i++)
     {
@@ -338,7 +354,7 @@ private String getHeader(String mailTo, String subject) throws IOException
     // We remove the last '\n' because if not, the following directives
     // (MIME-VERSION, Content-Type, boundary) are not taken into account.
     // There is a 'SimpleSMTPHeader.addHeaderField' function, but it
-    // appends the directives at the beginning, which in our case is wrong.
+    // appends the fields at the beginning, which in our case is wrong.
     sb.setLength(sb.length() - 1);
     return sb.toString();
 }
@@ -353,120 +369,6 @@ private String getBoundary()
 {
     long millis = System.currentTimeMillis();
     return "_boundary_"+ millis +"_"+ Long.toHexString(millis) +"_";
-}
-
-private String[] getAddressArray(String mailTo)
-{
-    if(mailTo == null)
-        return new String[0]; //....................................RETURN
-
-    StringTokenizer st = new StringTokenizer(mailTo, ";");
-    String[] recipients = new String[st.countTokens()];
-
-    for(int i = 0; i < recipients.length; i++)
-        recipients[i] = st.nextToken().trim();
-
-    return recipients;
-}
-
-private String encodeValue(String str)
-{
-    if(str == null || str.isEmpty())
-        return ""; //...............................................RETURN
-
-    // RFC 2047
-    byte[] content;
-
-    try
-    {
-        content = str.getBytes("UTF-8");
-    }
-    catch(UnsupportedEncodingException e)
-    {
-        content = str.getBytes();
-    }
-
-    Base64.Encoder e = Base64.getEncoder();
-    return "=?UTF-8?B?"+ e.encodeToString(content) +"?=";
-}
-
-private boolean isHtml(String text)
-{
-    if(text == null || text.isEmpty())
-        return false; //............................................RETURN
-
-    int i = 0,
-        n = text.length();
-
-    while(i < n)
-    {
-        if(!Character.isWhitespace(text.charAt(i)))
-            break;
-    }
-
-    String html = "<html>";
-    return text.regionMatches(true, i, html, 0, html.length());
-}
-
-private String encodeQuotedPrintable(String str)
-{
-    if(str == null || str.isEmpty())
-        return ""; //...............................................RETURN
-
-    byte[] content;
-
-    try
-    {
-        content = str.getBytes("ISO-8859-1");
-    }
-    catch(UnsupportedEncodingException e)
-    {
-        content = str.getBytes();
-    }
-
-    StringBuilder sb = new StringBuilder();
-
-    int start  = 0,
-        length = content.length,
-        last   = length - 1;
-
-    for(int i = 0; i < length; i++)
-    {
-        byte c = content[i];
-
-        if(c == '\n')
-        {
-            sb.append("\r\n");
-            start = sb.length();
-        }
-        else if(c >= 33 && c <= 126 && c != '=' ||
-                c == ' ' && i < last && content[i+1] != '\n')
-        {
-            start = checkLineLength(sb, start, 1);
-            sb.append((char)c);
-        }
-        else
-        {
-            start = checkLineLength(sb, start, 3);
-            sb.append('=').append(String.format("%02X", c));
-        }
-    }
-
-    return sb.toString();
-}
-
-private int checkLineLength(StringBuilder sb, int lineStart, int required)
-{
-    final int maxLength  = 76,
-              lineLength = sb.length() - lineStart;
-
-    if(lineLength + required >= maxLength)
-        sb.append("=\r\n");
-
-    if(sb.length() > 0 && sb.charAt(sb.length() - 1) == '\n')
-        lineStart = sb.length();
-
-    return lineStart;
 }
 
 private IOException newIOException(String message)
