@@ -173,10 +173,17 @@ private static String splitSubject(String s)
         String t = st.nextToken();
         int length = sb.length() - i;
 
-        if(length > 0 && length + t.length() > 75)
+        if(length > 0)
         {
-            sb.append("\n ");
-            i = sb.length();
+            if(length + t.length() > 75)
+            {
+                sb.append("\n ");
+                i = sb.length();
+            }
+            else
+            {
+                sb.append(' ');
+            }
         }
 
         sb.append(t);

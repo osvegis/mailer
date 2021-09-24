@@ -11,7 +11,7 @@ import java.io.*;
  */
 public class Use
 {
-public static void main() throws IOException
+public static void main(String[] args) throws IOException
 {
     String smtpHost = "?",
            smtpUser = "?",
