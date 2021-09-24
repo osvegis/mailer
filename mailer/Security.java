@@ -1,3 +1,7 @@
+/*
+ * Released under the MIT License.
+ * Copyright 2021 Tetra Informática, S.L.
+ */
 package mailer;
 
 /**
