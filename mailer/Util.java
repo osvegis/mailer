@@ -209,6 +209,8 @@ public static boolean isHtml(String s)
     {
         if(!Character.isWhitespace(s.charAt(i)))
             break;
+
+        i++;
     }
 
     String html = "<html>";
