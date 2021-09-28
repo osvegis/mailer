@@ -8,6 +8,7 @@ import java.io.*;
 import java.util.*;
 import org.apache.commons.net.*;
 import org.apache.commons.net.smtp.*;
+import static org.apache.commons.net.smtp.AuthenticatingSMTPClient.*;
 
 /**
  * Basic SMTP client for Java.
@@ -142,55 +143,81 @@ private AuthenticatingSMTPClient connect(
 
 private void clientAuth(String user, String password) throws IOException
 {
-    try
+    for(AUTH_METHOD method : getAuthMethods())
     {
-        // We try with the methods indicated by the server.
-        String header = "250-AUTH ";
-
-        for(String reply : smtpClient.getReplyStrings())
+        try
         {
-            if(reply.startsWith(header))
+            if(smtpClient.auth(method, user, password))
+                return; //..........................................RETURN
+        }
+        catch(Exception ex)
+        {
+            throw newIOException(ex);
+        }
+    }
+
+    throw newIOException("Access denied.");
+}
+
+private List<AUTH_METHOD> getAuthMethods() throws IOException
+{
+    List<AUTH_METHOD> methods = new ArrayList<>();
+    StringTokenizer st = getAuthTokens();
+
+    if(st != null)
+    {
+        // We will try with the methods indicated by the server.
+        List<AUTH_METHOD> insecure = new ArrayList<>();
+
+        while(st.hasMoreTokens())
+        {
+            switch(st.nextToken())
             {
-                StringTokenizer st = new StringTokenizer(
-                                     reply.substring(header.length()));
+                case "CRAM-MD5": methods.add(AUTH_METHOD.CRAM_MD5); break;
+                case "XOAUTH":   methods.add(AUTH_METHOD.XOAUTH);   break;
+                case "XOAUTH2":  methods.add(AUTH_METHOD.XOAUTH2);  break;
+                case "PLAIN":    insecure.add(AUTH_METHOD.PLAIN);   break;
+                case "LOGIN":    insecure.add(AUTH_METHOD.LOGIN);   break;
+                default: break;
+            }
+        }
 
-                while(st.hasMoreTokens())
-                {
-                    AuthenticatingSMTPClient.AUTH_METHOD method;
-                    method = getAuthMethod(st.nextToken());
+        methods.addAll(insecure);
+    }
 
-                    if(method != null)
-                    {
-                        if(smtpClient.auth(method, user, password))
-                            return; //..............................RETURN
-                    }
-                }
+    if(methods.isEmpty())
+    {
+        // From lost to the river!
+        methods.add(AUTH_METHOD.CRAM_MD5);
+        methods.add(AUTH_METHOD.XOAUTH);
+        methods.add(AUTH_METHOD.XOAUTH2);
+        methods.add(AUTH_METHOD.PLAIN);
+        methods.add(AUTH_METHOD.LOGIN);
+    }
+
+    return methods;
+}
+
+private StringTokenizer getAuthTokens() throws IOException
+{
+    for(String reply : smtpClient.getReplyStrings())
+    {
+        StringTokenizer st = new StringTokenizer(reply, " =");
+
+        if(st.hasMoreTokens())
+        {
+            String t = st.nextToken();
+
+            if("250-AUTH".equals(t) && st.hasMoreTokens() ||
+                "250".equals(t) && st.hasMoreTokens() &&
+                "AUTH".equals(st.nextToken()) && st.hasMoreTokens())
+            {
+                return st; //.......................................RETURN
             }
         }
     }
-    catch(Exception ex)
-    {
-        throw newIOException(ex);
-    }
-}
 
-private AuthenticatingSMTPClient.AUTH_METHOD getAuthMethod(String name)
-{
-    switch(name)
-    {
-        case "PLAIN":
-            return AuthenticatingSMTPClient.AUTH_METHOD.PLAIN;
-        case "CRAM-MD5":
-            return AuthenticatingSMTPClient.AUTH_METHOD.CRAM_MD5;
-        case "LOGIN":
-            return AuthenticatingSMTPClient.AUTH_METHOD.LOGIN;
-        case "XOAUTH":
-            return AuthenticatingSMTPClient.AUTH_METHOD.XOAUTH;
-        case "XOAUTH2":
-            return AuthenticatingSMTPClient.AUTH_METHOD.XOAUTH2;
-        default:
-            return null; // Unsupported method.
-    }
+    return null;
 }
 
 /**
