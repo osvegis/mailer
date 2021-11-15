@@ -86,7 +86,7 @@ public static String encodeString(String s)
         return s; //................................................RETURN
 
     // RFC 2047
-    byte[] content = getBytes(s);
+    byte[] content = getBytesUtf8(s);
     Base64.Encoder e = Base64.getEncoder();
     return "=?UTF-8?B?"+ e.encodeToString(content) +"?=";
 }
@@ -110,7 +110,7 @@ public static String encodeSubject(String s)
     // of 4 characters and in the following lines 16 groups. Therefore,
     // in the first line we will encode 42 bytes and in the following 48.
 
-    byte[] content = getBytes(s);
+    byte[] content = getBytesUtf8(s);
     Base64.Encoder e = Base64.getEncoder();
     StringBuilder sb = new StringBuilder();
     int chunk = 42;
@@ -149,7 +149,7 @@ private static boolean needEncoding(String s)
 }
 
 //------------------------------------------------------------------------
-private static byte[] getBytes(String s)
+private static byte[] getBytesUtf8(String s)
 {
     try
     {
@@ -227,26 +227,15 @@ public static String encodeQuotedPrintable(String str)
     if(str == null || str.isEmpty())
         return ""; //...............................................RETURN
 
-    byte[] content;
-
-    try
-    {
-        content = str.getBytes("ISO-8859-1");
-    }
-    catch(UnsupportedEncodingException e)
-    {
-        content = str.getBytes();
-    }
-
     StringBuilder sb = new StringBuilder();
 
     int start  = 0,
-        length = content.length,
+        length = str.length(),
         last   = length - 1;
 
     for(int i = 0; i < length; i++)
     {
-        byte c = content[i];
+        int c = getByteLatin1(str.charAt(i));
 
         if(c == '\n')
         {
@@ -254,7 +243,7 @@ public static String encodeQuotedPrintable(String str)
             start = sb.length();
         }
         else if(c >= 33 && c <= 126 && c != '=' ||
-                c == ' ' && i < last && content[i+1] != '\n')
+                c == ' ' && i < last && str.charAt(i+1) != '\n')
         {
             start = checkLineLength(sb, start, 1);
             sb.append((char)c);
@@ -267,6 +256,12 @@ public static String encodeQuotedPrintable(String str)
     }
 
     return sb.toString();
+}
+
+private static int getByteLatin1(char c)
+{
+    // € character (0x20AC in Unicode is 0x80 in ISO-8859-1).
+    return c > 0 && c < 256 ? c : (c == 0x20AC ? 0x80 : '?');
 }
 
 private static int checkLineLength(
